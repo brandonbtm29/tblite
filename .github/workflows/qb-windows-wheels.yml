@@ -95,12 +95,9 @@ jobs:
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          # --allow-multiple-definition: as in tblite's earlier MSYS2 CI job (build.yml)
           & $env:PY -m pip wheel ./python --no-build-isolation --no-deps -w dist -v `
             "-Cbuild-dir=$env:RUNNER_TEMP\b" `
-            "-Csetup-args=-Dddx:tests=false" `
-            "-Csetup-args=-Dc_link_args=-Wl,--allow-multiple-definition" `
-            "-Csetup-args=-Dfortran_link_args=-Wl,--allow-multiple-definition"
+            "-Csetup-args=-Dddx:tests=false"
           Get-ChildItem dist
 
       - name: Bundle the DLLs (delvewheel)
