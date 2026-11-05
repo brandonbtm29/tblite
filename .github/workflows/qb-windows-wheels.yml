@@ -42,6 +42,7 @@ jobs:
           install: >-
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-libgomp
             mingw-w64-ucrt-x86_64-lapack
             mingw-w64-ucrt-x86_64-pkgconf
 
@@ -115,7 +116,7 @@ jobs:
         run: |
           {
             cat .github/qb/THIRD-PARTY-NOTICES.txt
-            pacman -Q | grep -E 'gcc|lapack|winpthread|binutils|crt-git|headers-git'
+            pacman -Q | grep -E 'x86_64-(gcc|gcc-fortran|libgcc|libgfortran|libquadmath|libgomp|libstdc\+\+|libwinpthread|winpthreads|blas|lapack|binutils|crt|headers) '
           } > THIRD-PARTY-NOTICES.txt
           tail -n 12 THIRD-PARTY-NOTICES.txt
 
