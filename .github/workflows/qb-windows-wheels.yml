@@ -227,8 +227,10 @@ jobs:
         run: |
           cat > notes.md <<EOF
           Unofficial Windows (win_amd64) wheels of tblite $(ls dist/*.whl | head -n1 | cut -d- -f2) for CPython 3.11-3.13,
-          built from the unmodified upstream tag by [qb-windows-wheels.yml](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/.github/workflows/qb-windows-wheels.yml)
-          ([run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
+          built by [qb-windows-wheels.yml](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/.github/workflows/qb-windows-wheels.yml)
+          ([run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})) from upstream v0.8.0 plus one
+          build-system change: \`config/meson.build\` also links the GFortran runtime on Windows, where the
+          Python extension is linked by the C compiler. No source code changes.
 
           Install (pip venv on native Windows):
 

@@ -34,7 +34,9 @@ if fc_id == 'gcc'
   # undefined symbol errors such as:
   # - _ZGVbN2v_exp (from libmvec.so)
   # - _gfortran_os_error_at (from libfortran.so)
-  if os == 'linux'
+  # The same holds for the Python extension on Windows (MinGW-w64), which is
+  # linked by the C compiler.
+  if os == 'linux' or os == 'windows'
     lib_deps += cc.find_library('gfortran')
     quadmath_dep = cc.find_library('quadmath', required: false)
     if quadmath_dep.found()

@@ -2,8 +2,9 @@ tblite Windows (win_amd64) wheel: licenses of the bundled components
 =====================================================================
 
 This wheel was built by the brandonbtm29/tblite fork (branch qb/windows-wheels,
-workflow .github/workflows/qb-windows-wheels.yml) from the unmodified tblite source
-at the tag it names, with the MSYS2 UCRT64 MinGW-w64 GCC/gfortran toolchain, against
+workflow .github/workflows/qb-windows-wheels.yml) from upstream tblite v0.8.0 plus one
+build-system change (config/meson.build also links the GFortran runtime on Windows; no
+source code changes), with the MSYS2 UCRT64 MinGW-w64 GCC/gfortran toolchain, against
 the python.org CPython. It is not an official tblite release.
 
 tblite itself
