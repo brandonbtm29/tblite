@@ -1,0 +1,42 @@
+tblite Windows (win_amd64) wheel: licenses of the bundled components
+=====================================================================
+
+This wheel was built by the brandonbtm29/tblite fork (branch qb/windows-wheels,
+workflow .github/workflows/qb-windows-wheels.yml) from the unmodified tblite source
+at the tag it names, with the MSYS2 UCRT64 MinGW-w64 GCC/gfortran toolchain, against
+the python.org CPython. It is not an official tblite release.
+
+tblite itself
+-------------
+tblite: LGPL-3.0-or-later (COPYING, COPYING.LESSER next to this file).
+Source: https://github.com/tblite/tblite
+
+Statically linked into tblite/_libtblite*.pyd (built from source as meson subprojects,
+versions pinned by tblite's subprojects/*.wrap files):
+- mctc-lib (https://github.com/grimme-lab/mctc-lib): Apache-2.0
+- toml-f (https://github.com/toml-f/toml-f): Apache-2.0 OR MIT
+- multicharge (https://github.com/grimme-lab/multicharge): Apache-2.0
+- dftd4 (https://github.com/dftd4/dftd4): LGPL-3.0-or-later
+- s-dftd3 (https://github.com/dftd3/simple-dftd3): LGPL-3.0-or-later
+- ddX (https://github.com/ddsolvation/ddX): LGPL-3.0-or-later
+
+Bundled DLLs (tblite.libs/, renamed by delvewheel)
+--------------------------------------------------
+Taken unmodified from MSYS2 UCRT64 binary packages (exact package versions below).
+Sources: https://github.com/msys2/MINGW-packages and https://packages.msys2.org/
+
+- libgfortran-5.dll, libgcc_s_seh-1.dll, libstdc++-6.dll, libgomp-1.dll (GCC runtime
+  libraries): GPL-3.0-or-later WITH GCC-exception-3.1 (GCC Runtime Library Exception).
+  https://gcc.gnu.org/onlinedocs/libstdc++/manual/license.html
+- libquadmath-0.dll (GCC): LGPL-2.1-or-later.
+- libwinpthread-1.dll (mingw-w64 winpthreads): MIT AND BSD-3-Clause.
+  https://github.com/mingw-w64/mingw-w64/blob/master/mingw-w64-libraries/winpthreads/COPYING
+- liblapack.dll, libblas.dll (Reference LAPACK, https://github.com/Reference-LAPACK/lapack):
+  BSD-3-Clause.
+
+Corresponding source: the fork tag named in the GitHub release of this wheel (tblite plus
+the qb workflow), the subproject revisions in its subprojects/*.wrap files, and the MSYS2
+package sources above. The workflow rebuilds the wheel from them.
+
+MSYS2 packages used for this build
+----------------------------------

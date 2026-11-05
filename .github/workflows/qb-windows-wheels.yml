@@ -1,0 +1,250 @@
+# Windows (win_amd64) wheels of the tblite Python package for the brandonbtm29/tblite fork.
+#
+# The library and the CFFI extension are compiled with the MSYS2 UCRT64 MinGW-w64 toolchain
+# (gcc, gfortran, reference BLAS/LAPACK) against the python.org CPython, the MinGW runtime DLLs are
+# bundled with delvewheel, and every wheel is tested in a clean venv on a runner without MSYS2.
+# Pushing a qb-v* tag attaches the wheels to a GitHub release of the fork.
+
+name: qb-windows-wheels
+
+on:
+  push:
+    branches: ['qb/**']
+    tags: ['qb-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build (CPython ${{ matrix.python }})
+    runs-on: windows-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: MSYS2 UCRT64 toolchain
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-lapack
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Python
+        id: py
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Put the UCRT64 toolchain first on PATH
+        shell: pwsh
+        run: |
+          $bin = Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin'
+          $pkgconfig = if (Test-Path "$bin\pkg-config.exe") { "$bin\pkg-config.exe" } else { "$bin\pkgconf.exe" }
+          Add-Content -Path $env:GITHUB_PATH -Value $bin
+          Add-Content -Path $env:GITHUB_ENV -Value @(
+            "UCRT64_BIN=$bin",
+            "CC=$bin\gcc.exe",
+            "CXX=$bin\g++.exe",
+            "FC=$bin\gfortran.exe",
+            "AR=$bin\ar.exe",
+            "PKG_CONFIG=$pkgconfig",
+            "PY=${{ steps.py.outputs.python-path }}"
+          )
+
+      - name: Build tools
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          & $env:PY -m pip install --upgrade pip
+          & $env:PY -m pip install meson-python "meson!=1.8.0" ninja cffi setuptools delvewheel
+          & $env:PY --version
+          & $env:CC --version
+          & $env:FC --version
+          & $env:PY -m mesonbuild.mesonmain --version
+          $PSNativeCommandUseErrorActionPreference = $false
+          & $env:PKG_CONFIG --modversion lapack blas   # informational: meson falls back to find_library
+          exit 0
+
+      - name: Put the tblite sources into python/subprojects/tblite
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $tar = Join-Path $env:RUNNER_TEMP 'tblite-src.tar'
+          git archive --format=tar --prefix=tblite/ -o $tar HEAD
+          & $env:PY -c "import sys, tarfile; tarfile.open(sys.argv[1]).extractall(sys.argv[2], filter='data')" $tar python/subprojects
+          Get-ChildItem python/subprojects/tblite
+
+      - name: Build the wheel
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          # --allow-multiple-definition: as in tblite's earlier MSYS2 CI job (build.yml)
+          & $env:PY -m pip wheel ./python --no-build-isolation --no-deps -w dist -v `
+            "-Cbuild-dir=$env:RUNNER_TEMP\b" `
+            "-Csetup-args=-Dddx:tests=false" `
+            "-Csetup-args=-Dc_link_args=-Wl,--allow-multiple-definition" `
+            "-Csetup-args=-Dfortran_link_args=-Wl,--allow-multiple-definition"
+          Get-ChildItem dist
+
+      - name: Bundle the DLLs (delvewheel)
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $whl = (Get-ChildItem dist\*.whl).FullName
+          & $env:PY -m delvewheel show --add-path $env:UCRT64_BIN $whl
+          & $env:PY -m delvewheel repair --add-path $env:UCRT64_BIN -w wheelhouse $whl
+
+      - name: MSYS2 package versions for the notices
+        shell: msys2 {0}
+        run: |
+          {
+            cat .github/qb/THIRD-PARTY-NOTICES.txt
+            pacman -Q | grep -E 'gcc|lapack|winpthread|binutils|crt-git|headers-git'
+          } > THIRD-PARTY-NOTICES.txt
+          tail -n 12 THIRD-PARTY-NOTICES.txt
+
+      - name: Add the licenses to the wheel
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $whl = (Get-ChildItem wheelhouse\*.whl).FullName
+          & $env:PY .github/qb/add_notices.py $whl --add COPYING COPYING.LESSER THIRD-PARTY-NOTICES.txt
+          Copy-Item THIRD-PARTY-NOTICES.txt wheelhouse/
+          Get-ChildItem wheelhouse
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: wheel-${{ matrix.python }}
+          path: wheelhouse/*
+          retention-days: 30
+
+      - name: Upload the meson log
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: meson-log-${{ matrix.python }}
+          path: ${{ runner.temp }}/b/meson-logs/
+          retention-days: 7
+
+  test:
+    name: test (CPython ${{ matrix.python }}, clean venv)
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.11', '3.12', '3.13']
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: .github/qb
+
+      - name: Python
+        id: py
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: wheel-${{ matrix.python }}
+          path: wheelhouse
+
+      - name: Install into a clean venv and run the smoke test
+        shell: pwsh
+        env:
+          OMP_NUM_THREADS: '1'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          $venv = Join-Path $env:RUNNER_TEMP 'venv'
+          & '${{ steps.py.outputs.python-path }}' -m venv $venv
+          $py = Join-Path $venv 'Scripts\python.exe'
+          & $py -m pip install --upgrade pip
+          & $py -m pip install (Get-ChildItem wheelhouse\*.whl).FullName
+          & $py -m pip list
+          & $py -I .github/qb/smoke_test.py --check --json "smoke-${{ matrix.python }}.json"
+          "VENV_PY=$py" | Add-Content -Path $env:GITHUB_ENV
+
+      - name: tblite's own Python tests (informational)
+        continue-on-error: true
+        shell: pwsh
+        env:
+          OMP_NUM_THREADS: '1'
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $true
+          & $env:VENV_PY -m pip install pytest ase
+          Set-Location $env:RUNNER_TEMP
+          & $env:VENV_PY -m pytest --pyargs tblite -q -p no:cacheprovider
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: smoke-${{ matrix.python }}
+          path: smoke-${{ matrix.python }}.json
+          retention-days: 30
+
+  release:
+    name: GitHub release
+    needs: [build, test]
+    if: startsWith(github.ref, 'refs/tags/qb-v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: wheel-*
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum *.whl | tee SHA256SUMS
+
+      - name: Create or update the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<EOF
+          Unofficial Windows (win_amd64) wheels of tblite $(ls dist/*.whl | head -n1 | cut -d- -f2) for CPython 3.11-3.13,
+          built from the unmodified upstream tag by [qb-windows-wheels.yml](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/.github/workflows/qb-windows-wheels.yml)
+          ([run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID})).
+
+          Install (pip venv on native Windows):
+
+              pip install tblite --only-binary tblite --find-links ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/expanded_assets/${GITHUB_REF_NAME}
+
+          Build: MSYS2 UCRT64 gcc/gfortran, reference BLAS/LAPACK (like the PyPI Linux wheels), OpenMP,
+          ddX (CPCM) enabled; the GCC runtime and BLAS/LAPACK DLLs are bundled in tblite.libs/ by delvewheel.
+          Each wheel passed a GFN2/GFN1/ALPB/GBSA/CPCM water smoke test against the PyPI Linux wheel
+          (|dE| < 1e-7 Eh) in a clean venv.
+
+          Licenses: tblite is LGPL-3.0-or-later; the bundled components and their licenses are listed in
+          THIRD-PARTY-NOTICES.txt (also inside each wheel's .dist-info/licenses/).
+          Not an official tblite release.
+          EOF
+          if gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" dist/* --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" \
+              --title "tblite $GITHUB_REF_NAME: Windows wheels" --notes-file notes.md --verify-tag
+          fi
