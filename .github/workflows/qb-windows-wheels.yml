@@ -184,16 +184,19 @@ jobs:
           & $py -I .github/qb/smoke_test.py --check --json "smoke-${{ matrix.python }}.json"
           "VENV_PY=$py" | Add-Content -Path $env:GITHUB_ENV
 
-      - name: tblite's own Python tests (informational)
-        continue-on-error: true
+      - name: tblite's own Python tests
         shell: pwsh
         env:
           OMP_NUM_THREADS: '1'
         run: |
           $PSNativeCommandUseErrorActionPreference = $true
-          & $env:VENV_PY -m pip install pytest ase
+          & $env:VENV_PY -m pip install pytest ase qcelemental
           Set-Location $env:RUNNER_TEMP
-          & $env:VENV_PY -m pytest --pyargs tblite -q -p no:cacheprovider
+          Set-Content -Path pytest.ini -Value '[pytest]'
+          # test_gfn2_mindless saves the wavefunction into a NamedTemporaryFile that is still open, which
+          # Windows does not allow; the unguarded OPEN in save_wavefunction then aborts the interpreter.
+          # The same save/load round trip passes with a closed file.
+          & $env:VENV_PY -m pytest --pyargs tblite -q -rfE -p no:cacheprovider -c pytest.ini -k "not test_gfn2_mindless"
 
       - uses: actions/upload-artifact@v7
         if: always()
@@ -238,8 +241,9 @@ jobs:
 
           Build: MSYS2 UCRT64 gcc/gfortran, reference BLAS/LAPACK (like the PyPI Linux wheels), OpenMP,
           ddX (CPCM) enabled; the GCC runtime and BLAS/LAPACK DLLs are bundled in tblite.libs/ by delvewheel.
-          Each wheel passed a GFN2/GFN1/ALPB/GBSA/CPCM water smoke test against the PyPI Linux wheel
-          (|dE| < 1e-7 Eh) in a clean venv.
+          Each wheel passed, in a clean venv on a runner without MSYS2, a GFN2/GFN1/ALPB/GBSA/CPCM water
+          smoke test against the PyPI Linux wheel (|dE| < 1e-7 Eh) and tblite's own Python tests
+          (all but test_gfn2_mindless, which reopens an open NamedTemporaryFile: not possible on Windows).
 
           Licenses: tblite is LGPL-3.0-or-later; the bundled components and their licenses are listed in
           THIRD-PARTY-NOTICES.txt (also inside each wheel's .dist-info/licenses/).
