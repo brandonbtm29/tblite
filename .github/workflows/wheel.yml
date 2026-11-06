@@ -90,7 +90,7 @@ jobs:
           - ubuntu-latest
           - macos-15
           - macos-15-intel
-          # windows-latest
+          - windows-latest
 
     defaults:
       run:
@@ -101,6 +101,27 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.x'
+
+      # MinGW-w64 toolchain for the Windows wheels: gcc/gfortran and reference BLAS/LAPACK
+      # (libgomp is no longer pulled in by gcc and must be installed for OpenMP)
+      - name: Setup MSYS2 (UCRT64)
+        id: msys2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: false
+          install: >-
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-gcc-fortran
+            mingw-w64-ucrt-x86_64-libgomp
+            mingw-w64-ucrt-x86_64-lapack
+            mingw-w64-ucrt-x86_64-pkgconf
+
+      - name: Add the UCRT64 toolchain to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_PATH -Value (Join-Path '${{ steps.msys2.outputs.msys2-location }}' 'ucrt64\bin')
 
       # Install 'cibuildwheel' as the driver for building wheels
       - name: Install cibuildwheel
@@ -125,7 +146,7 @@ jobs:
           CIBW_ARCHS: auto64
           CIBW_ARCHS_MACOS: ${{ matrix.os == 'macos-15' && 'arm64' || 'x86_64' }}
           # MM: Package installation (yum install ...) works differently on musllinux
-          CIBW_SKIP: "{cp38-macosx_arm64,cp39-macosx_arm64,*musllinux*}"
+          CIBW_SKIP: "{cp38-macosx_arm64,cp39-macosx_arm64,*musllinux*,pp*-win*}"
           # Include all PyPy versions
           CIBW_ENABLE: pypy pypy-eol
           # Control verbosity of the 'pip wheel' output
@@ -149,6 +170,14 @@ jobs:
           # Work around duplicate OpenMP runtime loading during import tests on macOS;
           # restrict KMP_DUPLICATE_LIB_OK to the test command so built wheels do not rely on it.
           CIBW_TEST_COMMAND: KMP_DUPLICATE_LIB_OK=TRUE python -c "import tblite.interface"
+          # Windows: build with the MSYS2 UCRT64 toolchain set up above and bundle its runtime DLLs
+          # (libgfortran, libquadmath, libgcc_s, libgomp, libwinpthread, BLAS/LAPACK) with delvewheel
+          CIBW_ENVIRONMENT_WINDOWS: CC=gcc CXX=g++ FC=gfortran
+          CIBW_CONFIG_SETTINGS_WINDOWS: setup-args=-Dddx:tests=false
+          CIBW_BEFORE_BUILD_WINDOWS: pip install delvewheel
+          CIBW_REPAIR_WHEEL_COMMAND_WINDOWS: delvewheel repair --add-path "${{ steps.msys2.outputs.msys2-location }}\ucrt64\bin" -w {dest_dir} {wheel}
+          # cmd.exe has no VAR=value prefix
+          CIBW_TEST_COMMAND_WINDOWS: python -c "import tblite.interface"
 
       # Upload the built wheels as artifacts
       - uses: actions/upload-artifact@v7
