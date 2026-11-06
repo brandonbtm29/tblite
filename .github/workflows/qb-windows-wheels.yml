@@ -1,7 +1,7 @@
 # Windows (win_amd64) wheels of the tblite Python package for the brandonbtm29/tblite fork.
 #
 # The library and the CFFI extension are compiled with the MSYS2 UCRT64 MinGW-w64 toolchain
-# (gcc, gfortran, reference BLAS/LAPACK) against the python.org CPython, the MinGW runtime DLLs are
+# (gcc, gfortran, OpenBLAS for BLAS and LAPACK) against the python.org CPython, the MinGW runtime DLLs are
 # bundled with delvewheel, and every wheel is tested in a clean venv on a runner without MSYS2.
 # Pushing a qb-v* tag attaches the wheels to a GitHub release of the fork.
 
@@ -43,7 +43,7 @@ jobs:
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-gcc-fortran
             mingw-w64-ucrt-x86_64-libgomp
-            mingw-w64-ucrt-x86_64-lapack
+            mingw-w64-ucrt-x86_64-openblas
             mingw-w64-ucrt-x86_64-pkgconf
 
       - name: Python
@@ -67,6 +67,20 @@ jobs:
             "PKG_CONFIG=$pkgconfig",
             "PY=${{ steps.py.outputs.python-path }}"
           )
+
+      - name: OpenBLAS for every subproject (blas.pc and lapack.pc point at openblas.pc)
+        shell: msys2 {0}
+        run: |
+          set -e
+          echo "OpenMP runtime behind mingw-w64-ucrt-x86_64-omp:"
+          pacman -Qi mingw-w64-ucrt-x86_64-omp 2>/dev/null | grep -E '^(Name|Version|Provides)' || pacman -Q | grep -Ei 'omp|gomp'
+          pacman -Ql mingw-w64-ucrt-x86_64-openblas | grep -E '\.(dll|pc)$'
+          mkdir -p "$RUNNER_TEMP/qb-pc"
+          pc=/ucrt64/lib/pkgconfig/openblas.pc
+          sed 's/^Name:.*/Name: blas/' "$pc" > "$RUNNER_TEMP/qb-pc/blas.pc"
+          sed 's/^Name:.*/Name: lapack/' "$pc" > "$RUNNER_TEMP/qb-pc/lapack.pc"
+          cat "$RUNNER_TEMP/qb-pc/lapack.pc"
+          echo "PKG_CONFIG_PATH=$(cygpath -w "$RUNNER_TEMP/qb-pc");$(cygpath -w /ucrt64/lib/pkgconfig)" >> "$GITHUB_ENV"
 
       - name: Build tools
         shell: pwsh
@@ -99,6 +113,7 @@ jobs:
           & $env:PY -m pip wheel ./python --no-build-isolation --no-deps -w dist -v `
             "-Cbuild-dir=$env:RUNNER_TEMP\b" `
             "-Csetup-args=-Dddx:tests=false" `
+            "-Csetup-args=-Dtblite:lapack=openblas" `
             "-Csetup-args=-Dc_link_args=-Wl,--allow-multiple-definition" `
             "-Csetup-args=-Dfortran_link_args=-Wl,--allow-multiple-definition"
           Get-ChildItem dist
@@ -116,7 +131,7 @@ jobs:
         run: |
           {
             cat .github/qb/THIRD-PARTY-NOTICES.txt
-            pacman -Q | grep -E 'x86_64-(gcc|gcc-fortran|libgcc|libgfortran|libquadmath|libgomp|libstdc\+\+|libwinpthread|winpthreads|blas|lapack|binutils|crt|headers) '
+            pacman -Q | grep -E 'x86_64-(gcc|gcc-fortran|libgcc|libgfortran|libquadmath|libgomp|libstdc\+\+|libwinpthread|winpthreads|openblas|omp|llvm-openmp|binutils|crt|headers) '
           } > THIRD-PARTY-NOTICES.txt
           tail -n 12 THIRD-PARTY-NOTICES.txt
 
@@ -239,8 +254,8 @@ jobs:
 
               pip install tblite --only-binary tblite --find-links ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/expanded_assets/${GITHUB_REF_NAME}
 
-          Build: MSYS2 UCRT64 gcc/gfortran, reference BLAS/LAPACK (like the PyPI Linux wheels), OpenMP,
-          ddX (CPCM) enabled; the GCC runtime and BLAS/LAPACK DLLs are bundled in tblite.libs/ by delvewheel.
+          Build: MSYS2 UCRT64 gcc/gfortran, OpenBLAS (BLAS and LAPACK; win1 used reference BLAS/LAPACK), OpenMP,
+          ddX (CPCM) enabled; the GCC runtime and OpenBLAS DLLs are bundled in tblite.libs/ by delvewheel.
           Each wheel passed, in a clean venv on a runner without MSYS2, a GFN2/GFN1/ALPB/GBSA/CPCM water
           smoke test against the PyPI Linux wheel (|dE| < 1e-7 Eh) and tblite's own Python tests
           (all but test_gfn2_mindless, which reopens an open NamedTemporaryFile: not possible on Windows).
